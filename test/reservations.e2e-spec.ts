@@ -248,6 +248,15 @@ describe('Reservations (e2e)', () => {
       '15:00–18:00 UNAVAILABLE',
       '19:00–22:00 UNAVAILABLE',
     ]);
+
+    // Saving the suspended area must not move it in the list.
+    const areas = (await as(ctx, ANA).get('/v1/areas').expect(200))
+      .body as ResidentAreaDto[];
+    expect(areas.map((a) => a.id)).toEqual([
+      'grill',
+      'multipurpose-room',
+      'pool',
+    ]);
   });
 
   it('requires the x-user-id header and the right role', async () => {

@@ -28,9 +28,11 @@ export class MongoAreaRepository implements AreaRepository {
     return record ? toDomain(record) : null;
   }
 
+  /** $set keeps createdAt (used to order the areas); replaceOne would reset it. */
   async save(area: Area): Promise<void> {
+    const { _id, ...fields } = toRecord(area);
     await this.model
-      .replaceOne({ _id: area.id }, toRecord(area), { upsert: true })
+      .updateOne({ _id }, { $set: fields }, { upsert: true })
       .exec();
   }
 
