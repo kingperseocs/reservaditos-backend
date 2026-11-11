@@ -47,6 +47,15 @@ pnpm start:dev
 - API: http://localhost:8000/v1
 - Swagger: http://localhost:8000/docs
 
+### Con Docker (imagen de producción)
+```bash
+docker build -t reservaditos-backend .
+docker run -p 8000:8000 --network reservaditos-backend_default \
+  -e MONGODB_URI=mongodb://mongo:27017/reservaditos \
+  -e GEMINI_API_KEY=tu_clave reservaditos-backend
+```
+Imagen multi-stage con Node 26, solo dependencias de producción, usuario sin privilegios y `HEALTHCHECK` sobre `/v1/health`.
+
 ### Usuarios de demo (header `x-user-id`)
 | Id | Rol | Para qué sirve |
 |---|---|---|
@@ -77,6 +86,52 @@ El workflow `.github/workflows/ci.yml` corre lint, tests unitarios, e2e y build 
 - **La IA solo extrae; el dominio decide.** El modelo devuelve área, fecha y horario (o `null`). Validar que el área exista, que la fecha no haya pasado, que el horario sea de los ofrecidos y que esté libre lo hace el código, con tests. La respuesta del modelo se valida antes de usarla.
 - **Resiliencia del plan gratuito:** Gemini a veces responde 503 (alta demanda) o 429 (cuota por minuto). Un 503 se reintenta una vez; cualquier otro fallo pasa al modelo de respaldo (`GEMINI_FALLBACK_MODEL`), que tiene su propia cuota. Si todo falla, la API responde `503 AI_UNAVAILABLE` y la app puede seguir con el calendario.
 - **Sin transacciones Mongo:** la suspensión actualiza el área y luego las reservas una por una. Con un replica set (Atlas) se envolvería en una transacción.
+- **El asistente no tiene memoria de conversación:** cada mensaje se interpreta solo. Para un chat de varios turnos, la app reenviaría el `intent` anterior junto con el mensaje nuevo (sin estado en el servidor), o se guardaría la conversación en Mongo con un `conversationId` y TTL.
+
+## Despliegue en AWS
+```
+                 GitHub Actions (push a main: tests → build → deploy, rol OIDC sin claves fijas)
+                        │ imagen Docker
+                        ▼
+ App Flutter ─┐     Amazon ECR
+              │         │
+ Web Angular ─┼──▶ Application Load Balancer (HTTPS · ACM) ──▶ ECS Fargate (NestJS, /v1/health)
+ (S3 +        │                                                    │        │
+  CloudFront) │                                     Secrets Manager┘        └──▶ MongoDB Atlas (us-east-1)
+              │                                     MONGODB_URI, GEMINI_API_KEY   CloudWatch Logs
+```
+
+| Pieza | Servicio | Por qué |
+|---|---|---|
+| API | **ECS Fargate** detrás de un **Application Load Balancer** | Contenedores sin administrar servidores. El ALB da HTTPS (certificado de ACM) y usa `/v1/health` como health check. Es un proceso continuo, así que el cron de vencimiento funciona igual que en local. |
+| Imagen | **Amazon ECR** | Registro privado de la imagen Docker de este repo. |
+| Base de datos | **MongoDB Atlas** en la misma región de AWS | MongoDB administrado, con réplicas y backups. Mismo código: solo cambia `MONGODB_URI`. El acceso se restringe a la IP de salida del NAT Gateway, o con PrivateLink en clusters dedicados. |
+| Secretos | **AWS Secrets Manager** | `MONGODB_URI` y `GEMINI_API_KEY` llegan como variables de entorno del task; nunca están en el repo ni en la imagen. |
+| Logs | **CloudWatch Logs** | Driver `awslogs` del task de ECS. |
+| Web de la administración | **S3 + CloudFront** | El build de Angular es estático. |
+| CI/CD | **GitHub Actions** con rol IAM por **OIDC** | Después de los tests: `docker build`, push a ECR y actualización del servicio de ECS. Sin access keys guardadas en GitHub. |
+
+Pasos, en resumen:
+1. Crear el cluster en MongoDB Atlas (región `us-east-1`), un usuario de base de datos y la regla de acceso de red.
+2. Guardar `MONGODB_URI` y `GEMINI_API_KEY` en Secrets Manager.
+3. Crear el repositorio en ECR y subir la imagen (`docker build`, `docker push`).
+4. Crear el cluster de ECS, la task definition (puerto 8000, secretos, logs) y el servicio Fargate con un ALB apuntando a `/v1/health`.
+5. Cargar los datos de demo una vez, ejecutando el mismo task con el comando `node dist/database/seed`.
+6. Agregar al workflow un job de deploy que asuma un rol IAM por OIDC y actualice el servicio en cada push a `main`.
+
+Escalar a varias instancias es seguro: el vencimiento de reservas es idempotente y el índice único de Mongo protege el cupo, aunque dos instancias procesen lo mismo a la vez.
+
+## Cómo usé IA mientras programaba
+Usé **Claude Code** (Anthropic) como asistente de desarrollo en la terminal, trabajando por pasos y con revisión mía antes de avanzar:
+
+- **Reglas para la IA en el repo.** Antes de escribir código definí [CLAUDE/rules.md](CLAUDE/rules.md): rol, objetivo, las 6 reglas de negocio, arquitectura (Clean Architecture + DDD), convenciones (código en inglés, pnpm) y criterio de terminado. El asistente lo lee en cada sesión, así el código sale consistente.
+- **Análisis y supuestos.** Con la IA revisé las reglas ambiguas (cuándo corre el plazo de 24 h, qué significa «gana el primero», cómo contar el día de gracia) y dejé cada decisión escrita en este README.
+- **Generación de código y tests.** El asistente propuso y escribió el dominio, los casos de uso, los adaptadores de Mongo y de IA, y los tests; yo validé cada paso antes del siguiente. Cada regla tiene tests unitarios y el flujo completo tiene tests e2e.
+- **Depuración.** El primer pipeline de GitHub se colgó en los e2e. Con la IA reproduje el CI en un contenedor Linux sin `.env` y encontramos la causa: la app validaba las variables al cargarse, antes de que el test levantara Mongo. Se corrigió con un setup global de Jest (commit `fix(test): …`).
+- **Elección del modelo.** Consulté los modelos disponibles para mi clave de Gemini, descarté uno retirado para cuentas nuevas y elegí uno rápido del plan gratuito, con respaldo ante el 503/429 del free tier.
+- **Verificación manual.** Probé todos los endpoints en Postman siguiendo el flujo (residente → administración → pago → suspensión) y el asistente con mensajes reales a Gemini.
+
+Lo que no delegué: las decisiones de producto y de stack, la revisión del código y las pruebas finales.
 
 ## API
 Base: `http://localhost:8000/v1`. Errores siempre con la forma:
