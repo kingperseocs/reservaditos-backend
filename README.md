@@ -89,6 +89,40 @@ El workflow `.github/workflows/ci.yml` corre lint, tests unitarios, e2e y build 
 - **El asistente no tiene memoria de conversación:** cada mensaje se interpreta solo. Para un chat de varios turnos, la app reenviaría el `intent` anterior junto con el mensaje nuevo (sin estado en el servidor), o se guardaría la conversación en Mongo con un `conversationId` y TTL.
 
 ## Despliegue en AWS
+Hay dos niveles: lo que **se desplegó de verdad** para la demo (un EC2, barato y por dos días) y cómo quedaría **en producción**.
+
+### Desplegado: demo en EC2
+| | |
+|---|---|
+| **URL** | `http://<IP-pública>/v1` · Swagger en `http://<IP-pública>/docs` *(activo del 11 al 13/11/2026; luego la instancia se elimina)* |
+| **Infraestructura** | 1 instancia **EC2 t3.small** (Ubuntu 24.04) en **São Paulo (sa-east-1)** con **Docker Compose**: la API (este `Dockerfile`) y MongoDB 7 en la red interna, sin puerto público |
+| **Archivos** | [`docker-compose.prod.yml`](docker-compose.prod.yml) y [`.env.production.example`](.env.production.example) |
+| **Costo** | ≈ US$ 2 por 48 h (instancia + IP pública + disco), con alerta de presupuesto en AWS Budgets |
+
+```bash
+# En el servidor (Ubuntu con Docker instalado)
+git clone https://github.com/kingperseocs/reservaditos-backend.git && cd reservaditos-backend
+cp .env.production.example .env.production   # PUBLIC_BASE_URL y GEMINI_API_KEY
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec api node dist/database/seed.js
+```
+El grupo de seguridad abre solo el puerto 80 (HTTP) a internet y el 22 (SSH) a mi IP.
+
+**Por qué EC2 para la demo.** Es el mismo `Dockerfile` y la misma forma de correrlo que en local, así que hay menos piezas nuevas que pueden fallar. El costo es acotado y conocido para dos días, y se borra al terminar. São Paulo es la región más cercana a Lima. Al ser un proceso continuo, el cron de vencimiento funciona igual que en desarrollo.
+
+**Qué mejoraría para producción** (la arquitectura de abajo):
+
+| Demo en EC2 | Producción |
+|---|---|
+| HTTP en una IP pública | HTTPS con dominio (certificado de ACM en el ALB o CloudFront) |
+| MongoDB en el mismo servidor; los datos viven en su disco | MongoDB Atlas con réplicas y backups automáticos |
+| `GEMINI_API_KEY` en un `.env` del servidor | AWS Secrets Manager |
+| Una sola instancia; si se cae, se cae el servicio | ECS Fargate con 2 o más tareas y health checks del ALB |
+| Despliegue manual (`git pull` + `docker compose`) | GitHub Actions → ECR → ECS con rol IAM por OIDC |
+| Logs con `docker logs` | CloudWatch Logs y alarmas |
+| SSH abierto a una IP | Sin SSH (SSM Session Manager) y la API en subred privada |
+
+### Producción
 ```
                  GitHub Actions (push a main: tests → build → deploy, rol OIDC sin claves fijas)
                         │ imagen Docker
