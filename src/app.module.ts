@@ -16,6 +16,8 @@ import { SharedModule } from './shared/infrastructure/shared.module';
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
+      // Tests get their config from the test setup, never from a developer's .env
+      ignoreEnvFile: process.env.NODE_ENV === 'test',
       validationSchema: envValidationSchema,
     }),
     ScheduleModule.forRoot(),
