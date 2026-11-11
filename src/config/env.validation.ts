@@ -14,6 +14,7 @@ export interface EnvironmentVariables {
   AI_PROVIDER: AiProvider;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL: string;
+  GEMINI_FALLBACK_MODEL: string;
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_MODEL: string;
 }
@@ -34,7 +35,10 @@ export const envValidationSchema = Joi.object<EnvironmentVariables>({
     .valid(...AI_PROVIDERS)
     .default('gemini'),
   GEMINI_API_KEY: Joi.string().allow('').optional(),
-  GEMINI_MODEL: Joi.string().default('gemini-2.5-flash'),
+  GEMINI_MODEL: Joi.string().default('gemini-3.5-flash'),
+  GEMINI_FALLBACK_MODEL: Joi.string()
+    .allow('')
+    .default('gemini-3.5-flash-lite'),
   ANTHROPIC_API_KEY: Joi.string().allow('').optional(),
   ANTHROPIC_MODEL: Joi.string().default('claude-haiku-5-5'),
 });

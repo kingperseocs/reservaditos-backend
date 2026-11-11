@@ -16,6 +16,7 @@ const STATUS_BY_TYPE: Record<DomainErrorType, HttpStatus> = {
   [DomainErrorType.FORBIDDEN]: HttpStatus.FORBIDDEN,
   [DomainErrorType.NOT_FOUND]: HttpStatus.NOT_FOUND,
   [DomainErrorType.CONFLICT]: HttpStatus.CONFLICT,
+  [DomainErrorType.UNAVAILABLE]: HttpStatus.SERVICE_UNAVAILABLE,
 };
 
 /** Every error leaves the API as { statusCode, code, message, details? }. */

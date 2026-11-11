@@ -8,6 +8,7 @@ const DESCRIPTIONS: Record<number, string> = {
   403: 'Not allowed',
   404: 'Not found',
   409: 'Business rule conflict',
+  503: 'AI provider unavailable or not configured',
 };
 
 /** Documents error responses with the shared error shape. */

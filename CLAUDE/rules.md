@@ -51,6 +51,7 @@ src/
 - The assistant depends on the `IntentExtractor` port, never on a vendor SDK.
 - Adapters live in `assistant/infrastructure` (one per provider) and are chosen with `AI_PROVIDER` (`gemini` by default, `anthropic` optional).
 - The model only extracts data (area, date, slot). Business validation (does the slot exist, is it free) stays in the domain.
+- Gemini adapter: retry a 503 once, then use `GEMINI_FALLBACK_MODEL`; never let a provider error reach the client as a 500 (`503 AI_UNAVAILABLE`).
 - Tests and CI use a fake extractor: no API keys, no network.
 
 ## Conventions

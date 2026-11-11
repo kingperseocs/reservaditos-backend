@@ -76,6 +76,6 @@ import { ReservationsController } from './presentation/reservations.controller';
     SuspendAreaUseCase,
     ReservationExpiryScheduler,
   ],
-  exports: [RESERVATION_REPOSITORY],
+  exports: [RESERVATION_REPOSITORY, BookingContext, AvailabilityReader],
 })
 export class ReservationsModule {}

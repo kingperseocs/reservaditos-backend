@@ -4,29 +4,35 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/config/app.setup';
+import { INTENT_EXTRACTOR } from '../../src/modules/assistant/domain/intent-extractor';
 import { CLOCK } from '../../src/shared/domain/ports';
 import { NOW } from '../builders/reservation.builder';
 import { FakeClock } from '../fakes/fake-clock';
+import { FakeIntentExtractor } from '../fakes/fake-intent-extractor';
 
 /** MongoDB comes from test/setup/global-setup.ts (in-memory, never the local .env). */
 export interface TestContext {
   app: INestApplication;
   clock: FakeClock;
+  ai: FakeIntentExtractor;
 }
 
 export async function createTestApp(): Promise<TestContext> {
   const clock = new FakeClock(NOW);
+  const ai = new FakeIntentExtractor();
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(CLOCK)
     .useValue(clock)
+    .overrideProvider(INTENT_EXTRACTOR)
+    .useValue(ai)
     .compile();
 
   const app = moduleRef.createNestApplication({ logger: ['error'] });
   configureApp(app);
   await app.init();
 
-  return { app, clock };
+  return { app, clock, ai };
 }
 
 export async function closeTestApp(context?: TestContext): Promise<void> {

@@ -39,7 +39,7 @@ API para reservar áreas comunes de un edificio (parrilla, salón de usos múlti
 ## Cómo correrlo
 ```bash
 pnpm install
-cp .env.example .env
+cp .env.example .env      # agrega GEMINI_API_KEY (gratis en aistudio.google.com)
 docker compose up -d      # MongoDB en localhost:27017
 pnpm seed                 # datos de demo (Edificio Demo)
 pnpm start:dev
@@ -73,6 +73,9 @@ El workflow `.github/workflows/ci.yml` corre lint, tests unitarios, e2e y build 
 - **Suspensión (regla 6):** las reservas pagadas del rango pasan a `REFUNDED` con el 100 % (tarifa + garantía); las pendientes o aprobadas se rechazan con el motivo. No se puede suspender desde una fecha pasada.
 - **Pago simulado:** al aprobar se genera un token; `POST /v1/payments/{token}` confirma y devuelve un código `DEMO-1234`. El token del link funciona como credencial, igual que un link de pago real.
 - **Zona horaria:** `America/Lima` para las fechas de negocio; los instantes se guardan en UTC.
+- **Asistente de IA con proveedor intercambiable:** el caso de uso depende de la interfaz `IntentExtractor`, no de un SDK. Gemini es el proveedor por defecto (plan gratuito, sin tarjeta); Claude está implementado y se activa con `AI_PROVIDER=anthropic`. Ambos usan el mismo JSON Schema: salida estructurada en Gemini y herramienta forzada en Claude.
+- **La IA solo extrae; el dominio decide.** El modelo devuelve área, fecha y horario (o `null`). Validar que el área exista, que la fecha no haya pasado, que el horario sea de los ofrecidos y que esté libre lo hace el código, con tests. La respuesta del modelo se valida antes de usarla.
+- **Resiliencia del plan gratuito:** Gemini a veces responde 503 (alta demanda) o 429 (cuota por minuto). Un 503 se reintenta una vez; cualquier otro fallo pasa al modelo de respaldo (`GEMINI_FALLBACK_MODEL`), que tiene su propia cuota. Si todo falla, la API responde `503 AI_UNAVAILABLE` y la app puede seguir con el calendario.
 - **Sin transacciones Mongo:** la suspensión actualiza el área y luego las reservas una por una. Con un replica set (Atlas) se envolvería en una transacción.
 
 ## API
@@ -256,6 +259,38 @@ Response `201`:
 ```json
 { "paidCount": 3, "refundAmount": 450, "unpaidCount": 1, "suspension": { "id": "7c1f…", "from": "2026-11-20", "to": "2026-11-22", "reason": "Mantenimiento programado" } }
 ```
+
+### Asistente: interpretar un mensaje (IA)
+url: `/v1/assistant/interpret`
+method: `POST`
+header: `x-user-id: ana-perez`
+body:
+```json
+{ "message": "quiero la parrilla el sábado de 7 a 10 pm" }
+```
+Response `200` cuando hay datos suficientes y el horario está libre:
+```json
+{
+  "complete": true,
+  "intent": { "areaId": "grill", "areaName": "Parrilla", "date": "2026-11-14", "startTime": "19:00", "endTime": "22:00" },
+  "missing": null,
+  "question": null,
+  "reply": "Listo: Parrilla el sábado 14/11 de 19:00 a 22:00. Total S/ 150. ¿Confirmas la reserva?"
+}
+```
+Response `200` cuando falta un dato (`missing`: `area` · `date` · `slot`):
+```json
+{
+  "complete": false,
+  "intent": { "areaId": "multipurpose-room", "areaName": "Salón de usos múltiples", "date": null, "startTime": null, "endTime": null },
+  "missing": "date",
+  "question": "¿Para qué día quieres el Salón de usos múltiples?",
+  "reply": "¿Para qué día quieres el Salón de usos múltiples?"
+}
+```
+Si el horario está ocupado, `question` propone los libres: «La Parrilla no está disponible el sábado 14/11 de 15:00–18:00. Quedan libres: 12:00–15:00, 19:00–22:00. ¿Te sirve alguno?».
+Con `complete: true`, la app envía `intent` a `POST /v1/reservations`.
+Errores: `503 AI_UNAVAILABLE`, `503 AI_NOT_CONFIGURED` (falta la clave).
 
 > Reglas del proyecto para el desarrollo asistido: [CLAUDE/rules.md](CLAUDE/rules.md).
 

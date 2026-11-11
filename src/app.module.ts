@@ -4,6 +4,7 @@ import { APP_FILTER } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { envValidationSchema } from './config/env.validation';
 import { AreasModule } from './modules/areas/areas.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 import { HealthModule } from './modules/health/health.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { UsersModule } from './modules/users/users.module';
@@ -27,6 +28,7 @@ import { SharedModule } from './shared/infrastructure/shared.module';
     UsersModule,
     AreasModule,
     ReservationsModule,
+    AssistantModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })

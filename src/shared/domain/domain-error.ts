@@ -4,6 +4,8 @@ export enum DomainErrorType {
   FORBIDDEN = 'FORBIDDEN',
   NOT_FOUND = 'NOT_FOUND',
   CONFLICT = 'CONFLICT',
+  /** An external dependency (e.g. the AI provider) failed or is not configured. */
+  UNAVAILABLE = 'UNAVAILABLE',
 }
 
 /** Business rule violation. `code` is stable and meant for clients. */
