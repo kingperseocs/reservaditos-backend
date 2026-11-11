@@ -21,6 +21,29 @@
 
 API para reservar áreas comunes de un edificio (parrilla, salón de usos múltiples, piscina). El residente pide un área para una fecha y un horario desde la app; la administración aprueba o rechaza desde la web; el residente paga con un link (pago simulado). Si no paga a tiempo, la reserva vence y el horario se libera.
 
+## El proyecto completo
+Son tres repositorios. **Empieza por este**: la web y la app consumen esta API.
+
+| # | Repositorio | Qué es | Quién lo usa |
+|---|---|---|---|
+| 1 | [reservaditos-backend](https://github.com/kingperseocs/reservaditos-backend) (este) | API NestJS + MongoDB, reglas de negocio, asistente IA | — |
+| 2 | [reservaditos-webapp](https://github.com/kingperseocs/reservaditos-webapp) | Web Angular de la administración (aprobar, rechazar, suspender) | Administración |
+| 3 | [reservaditos-mobileapp](https://github.com/kingperseocs/reservaditos-mobileapp) | App Flutter del residente (pedir, seguir el estado, pagar) | Residente |
+
+```bash
+git clone https://github.com/kingperseocs/reservaditos-backend.git
+git clone https://github.com/kingperseocs/reservaditos-webapp.git
+git clone https://github.com/kingperseocs/reservaditos-mobileapp.git
+```
+
+**Orden para ver el flujo de punta a punta en local:**
+1. Backend: MongoDB + datos de demo + API en `http://localhost:8000` (abajo, [Cómo correrlo](#cómo-correrlo)).
+2. Web: `pnpm install && pnpm start` → http://localhost:4200.
+3. App: `flutter pub get && flutter run` en un emulador de Android.
+4. En la app (residente Ana) pide la Parrilla → en la web aprueba la solicitud → la app pasa sola a «Aprobada» → paga → «Confirmada» con código.
+
+**Sin instalar nada:** mientras la demo en AWS esté activa (hasta el 13/11/2026), la API responde en `http://15.229.3.0/v1` y su Swagger en http://15.229.3.0/docs. La web (`pnpm start:aws`) y la app (`config/aws.json`) traen una configuración lista para usarla.
+
 ## Stack
 | | Tecnología | Uso |
 |---|---|---|
@@ -32,20 +55,27 @@ API para reservar áreas comunes de un edificio (parrilla, salón de usos múlti
 | <img src="https://cdn.simpleicons.org/githubactions/2088FF" width="20" alt="" /> | GitHub Actions | Lint, tests y build en cada push |
 
 ## Requisitos
-- Node **26 LTS** (mínimo 24.9)
-- pnpm 10
-- Docker Desktop (para MongoDB local)
+- Node **26 LTS** (`.nvmrc`; mínimo 24.9)
+- pnpm 10 (si no lo tienes: `corepack enable`, viene con Node)
+- Docker Desktop (para MongoDB local; o un MongoDB propio en el puerto 27017)
 
 ## Cómo correrlo
 ```bash
+git clone https://github.com/kingperseocs/reservaditos-backend.git
+cd reservaditos-backend
 pnpm install
-cp .env.example .env      # agrega GEMINI_API_KEY (gratis en aistudio.google.com)
+cp .env.example .env      # opcional: GEMINI_API_KEY (gratis en aistudio.google.com)
 docker compose up -d      # MongoDB en localhost:27017
 pnpm seed                 # datos de demo (Edificio Demo)
 pnpm start:dev
 ```
 - API: http://localhost:8000/v1
 - Swagger: http://localhost:8000/docs
+- Comprobar: http://localhost:8000/v1/health debe responder `"database": "up"`.
+
+Sin `GEMINI_API_KEY` todo funciona igual salvo el asistente (`POST /v1/assistant/interpret` responde `503 AI_NOT_CONFIGURED`). La clave es gratuita y no pide tarjeta.
+
+Si el puerto 27017 ya está en uso (por ejemplo, un servicio de MongoDB instalado en Windows), detén ese servicio o deja que la API use ese Mongo y salta `docker compose up -d`.
 
 ### Con Docker (imagen de producción)
 ```bash
@@ -94,10 +124,10 @@ Hay dos niveles: lo que **se desplegó de verdad** para la demo (un EC2, barato 
 ### Desplegado: demo en EC2
 | | |
 |---|---|
-| **URL** | `http://<IP-pública>/v1` · Swagger en `http://<IP-pública>/docs` *(activo del 11 al 13/11/2026; luego la instancia se elimina)* |
-| **Infraestructura** | 1 instancia **EC2 t3.small** (Ubuntu 24.04) en **São Paulo (sa-east-1)** con **Docker Compose**: la API (este `Dockerfile`) y MongoDB 7 en la red interna, sin puerto público |
+| **URL** | `http://15.229.3.0/v1` · Swagger en http://15.229.3.0/docs *(activo del 11 al 13/11/2026; luego la instancia se elimina)* |
+| **Infraestructura** | 1 instancia **EC2 t3.micro** (Ubuntu 24.04) en **São Paulo (sa-east-1)** con **Docker Compose**: la API (este `Dockerfile`) y MongoDB 7 en la red interna, sin puerto público |
 | **Archivos** | [`docker-compose.prod.yml`](docker-compose.prod.yml) y [`.env.production.example`](.env.production.example) |
-| **Costo** | ≈ US$ 2 por 48 h (instancia + IP pública + disco), con alerta de presupuesto en AWS Budgets |
+| **Costo** | Dentro de la capa gratuita (t3.micro); como mucho, centavos por la IP pública. Con alerta de presupuesto en AWS Budgets |
 
 ```bash
 # En el servidor (Ubuntu con Docker instalado)
@@ -106,7 +136,7 @@ cp .env.production.example .env.production   # PUBLIC_BASE_URL y GEMINI_API_KEY
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec api node dist/database/seed.js
 ```
-El grupo de seguridad abre solo el puerto 80 (HTTP) a internet y el 22 (SSH) a mi IP.
+El grupo de seguridad abre a internet solo el puerto 80 (HTTP). El 22 (SSH) se abrió únicamente mientras se instalaba y se cierra después. MongoDB no tiene puerto público.
 
 **Por qué EC2 para la demo.** Es el mismo `Dockerfile` y la misma forma de correrlo que en local, así que hay menos piezas nuevas que pueden fallar. El costo es acotado y conocido para dos días, y se borra al terminar. São Paulo es la región más cercana a Lima. Al ser un proceso continuo, el cron de vencimiento funciona igual que en desarrollo.
 
